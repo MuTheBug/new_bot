@@ -117,6 +117,30 @@ class BacktestEngine:
             # Flash crash detection
             risk.detect_flash_crash(row["open"], close, high, low)
 
+            # Force-close if kill-switch drawdown breached while in position
+            if position is not None and risk._killed:
+                exit_price = self._apply_slippage(
+                    close, "SHORT" if position.side == "LONG" else "LONG"
+                )
+                notional = position.size * exit_price
+                fee = self._apply_fee(notional)
+                if position.side == "LONG":
+                    pnl = (exit_price - position.entry_price) * position.size - fee
+                else:
+                    pnl = (position.entry_price - exit_price) * position.size - fee
+                equity += pnl
+                risk.current_equity = equity
+                risk.record_trade(pnl, str(df.index[i]))
+                trades.append({
+                    "entry_idx": position.entry_idx, "exit_idx": i,
+                    "side": position.side, "entry_price": position.entry_price,
+                    "exit_price": exit_price, "size": position.size,
+                    "pnl": pnl, "reason": "kill_switch", "equity_after": equity,
+                })
+                position = None
+                equity_curve.append(equity)
+                continue
+
             # --- Manage open position ---
             if position is not None:
                 # Check stop-loss / take-profit hit during candle
@@ -162,6 +186,9 @@ class BacktestEngine:
                         pnl = (position.entry_price - exit_price) * position.size - fee
 
                     equity += pnl
+                    risk.current_equity = equity
+                    if equity > risk.peak_equity:
+                        risk.peak_equity = equity
                     risk.record_trade(pnl, str(df.index[i]))
                     trades.append({
                         "entry_idx": position.entry_idx,
@@ -195,6 +222,7 @@ class BacktestEngine:
                         notional = position.size * close
                         funding_cost = self._apply_funding(notional)
                         equity -= funding_cost
+                        risk.current_equity = equity
 
             # --- Entry logic ---
             if position is None and not np.isnan(predictions[i]):
@@ -216,6 +244,7 @@ class BacktestEngine:
                     if size > 0:
                         fee = self._apply_fee(size * entry_price)
                         equity -= fee
+                        risk.current_equity = equity
                         position = Position(
                             side=side,
                             entry_price=entry_price,
@@ -231,6 +260,7 @@ class BacktestEngine:
                     if size > 0:
                         fee = self._apply_fee(size * entry_price)
                         equity -= fee
+                        risk.current_equity = equity
                         position = Position(
                             side=side,
                             entry_price=entry_price,

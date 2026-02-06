@@ -34,8 +34,8 @@ class TradingConfig:
     # Timeframes
     primary_tf: str = "1h"
     # Signal thresholds
-    entry_confidence: float = 0.60
-    exit_confidence: float = 0.45
+    entry_confidence: float = 0.58
+    exit_confidence: float = 0.38  # lower = less aggressive signal exits (let TP work)
 
 
 @dataclass
@@ -44,8 +44,8 @@ class RiskConfig:
 
     # ATR-based stops
     atr_period: int = 14
-    sl_atr_mult: float = 1.5
-    tp_atr_mult: float = 2.5
+    sl_atr_mult: float = 1.2
+    tp_atr_mult: float = 3.0  # R:R = 2.5:1 (wider TP, tighter SL)
     # Equity-curve circuit breaker
     max_drawdown_pct: float = 25.0  # kill-switch threshold
     max_daily_loss_pct: float = 10.0
