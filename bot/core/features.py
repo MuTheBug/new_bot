@@ -182,16 +182,67 @@ def _z_score(s: pd.Series, window: int) -> pd.Series:
 # Labelling
 # ---------------------------------------------------------------------------
 
-def make_labels(close: pd.Series, horizon: int = 3,
+def make_labels(close: pd.Series, horizon: int = 6,
                 threshold: float = 0.0) -> pd.Series:
     """Binary label: 1 if future return > threshold, else 0."""
     future_ret = close.shift(-horizon) / close - 1
     return (future_ret > threshold).astype(int)
 
 
-def make_regression_labels(close: pd.Series, horizon: int = 3) -> pd.Series:
+def make_threshold_labels(close: pd.Series, horizon: int = 6,
+                          threshold: float = 0.01) -> pd.Series:
+    """Ternary-filtered binary label.
+
+    Returns 1 if future return > +threshold, 0 if < -threshold, NaN otherwise.
+    NaN rows are excluded from training, forcing the model to learn only
+    from significant moves (not noise around zero).
+    """
+    future_ret = close.shift(-horizon) / close - 1
+    label = pd.Series(np.nan, index=close.index)
+    label[future_ret > threshold] = 1.0
+    label[future_ret < -threshold] = 0.0
+    return label
+
+
+def make_regression_labels(close: pd.Series, horizon: int = 6) -> pd.Series:
     """Continuous label: future log return."""
     return np.log(close.shift(-horizon) / close)
+
+
+# ---------------------------------------------------------------------------
+# Feature selection
+# ---------------------------------------------------------------------------
+
+def select_features(features: pd.DataFrame, labels: np.ndarray,
+                    top_n: int = 30) -> List[str]:
+    """Select top_n features by LightGBM importance on a quick fit.
+
+    Runs a fast LightGBM to rank features, returns the column names to keep.
+    This prevents overfitting from noisy low-importance features.
+    """
+    try:
+        import lightgbm as lgb
+    except ImportError:
+        return list(features.columns[:top_n])
+
+    X = np.nan_to_num(features.values.astype(np.float32))
+    split = int(len(X) * 0.8)
+    dtrain = lgb.Dataset(X[:split], label=labels[:split])
+    dval = lgb.Dataset(X[split:], label=labels[split:], reference=dtrain)
+
+    params = {
+        "objective": "binary", "metric": "auc", "boosting_type": "gbdt",
+        "num_leaves": 31, "learning_rate": 0.05, "feature_fraction": 0.7,
+        "bagging_fraction": 0.7, "bagging_freq": 5, "verbose": -1,
+    }
+    model = lgb.train(
+        params, dtrain, num_boost_round=100, valid_sets=[dval],
+        callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)],
+    )
+    imp = model.feature_importance(importance_type="gain")
+    ranked = pd.Series(imp, index=features.columns).sort_values(ascending=False)
+    selected = list(ranked.head(top_n).index)
+    return selected
 
 
 # ---------------------------------------------------------------------------

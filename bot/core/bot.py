@@ -318,9 +318,9 @@ class TradingBot:
                 if self._current_position is not None:
                     pos = self._current_position
                     # Check for signal-based exit
-                    if pos["side"] == "LONG" and signal < self.cfg.trading.exit_confidence:
+                    if pos["side"] == "LONG" and signal < self.cfg.trading.signal_exit_long:
                         self._close_position(symbol, "signal_reversal")
-                    elif pos["side"] == "SHORT" and signal > (1 - self.cfg.trading.exit_confidence):
+                    elif pos["side"] == "SHORT" and signal > self.cfg.trading.signal_exit_short:
                         self._close_position(symbol, "signal_reversal")
                     else:
                         # Update trailing stop
@@ -332,11 +332,11 @@ class TradingBot:
 
                 # --- Entry logic ---
                 if self._current_position is None and self.risk.can_trade():
-                    if signal >= self.cfg.trading.entry_confidence:
+                    if signal >= self.cfg.trading.long_entry_threshold:
                         self._open_position(
                             symbol, "LONG", signal, current_price, current_atr
                         )
-                    elif signal <= (1 - self.cfg.trading.entry_confidence):
+                    elif signal <= self.cfg.trading.short_entry_threshold:
                         self._open_position(
                             symbol, "SHORT", signal, current_price, current_atr
                         )

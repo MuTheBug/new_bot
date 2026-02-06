@@ -27,15 +27,19 @@ class TradingConfig:
     symbols: List[str] = field(default_factory=lambda: ["XRPUSDT"])
     leverage: int = 10
     margin_type: str = "ISOLATED"
-    # Position sizing
+    # Position sizing — reduced risk per trade for more trades
     risk_per_trade_pct: float = 2.0  # % of equity risked per trade
     max_position_pct: float = 90.0  # max % of equity in a single position
     min_notional_usd: float = 5.0  # Binance minimum notional
     # Timeframes
     primary_tf: str = "1h"
-    # Signal thresholds
-    entry_confidence: float = 0.58
-    exit_confidence: float = 0.38  # lower = less aggressive signal exits (let TP work)
+    # Signal thresholds — asymmetric: more selective on LONGs (weaker edge)
+    long_entry_threshold: float = 0.58
+    short_entry_threshold: float = 0.44
+    signal_exit_long: float = 0.44  # exit LONG if signal flips strongly bearish
+    signal_exit_short: float = 0.58  # exit SHORT if signal flips strongly bullish
+    # Time-based exit
+    max_hold_candles: int = 18  # force exit after 3x prediction horizon
 
 
 @dataclass
@@ -44,18 +48,19 @@ class RiskConfig:
 
     # ATR-based stops
     atr_period: int = 14
-    sl_atr_mult: float = 1.2
-    tp_atr_mult: float = 3.0  # R:R = 2.5:1 (wider TP, tighter SL)
+    sl_atr_mult: float = 1.5
+    tp_atr_mult: float = 2.5  # R:R = 1.67:1 — more reward per risk unit
     # Equity-curve circuit breaker
-    max_drawdown_pct: float = 25.0  # kill-switch threshold
+    max_drawdown_pct: float = 30.0  # hard kill-switch
+    soft_drawdown_pct: float = 15.0  # start scaling risk down at this level
     max_daily_loss_pct: float = 10.0
-    max_consecutive_losses: int = 5
+    max_consecutive_losses: int = 8
     # Flash-crash protection
-    flash_crash_pct: float = 8.0  # single-candle move threshold
-    cooldown_candles: int = 3  # pause after flash crash detected
+    flash_crash_pct: float = 15.0  # single-candle move (hourly)
+    cooldown_candles: int = 2
     # Trailing stop
     trailing_activate_pct: float = 1.5
-    trailing_callback_pct: float = 0.8
+    trailing_callback_pct: float = 0.6
 
 
 @dataclass
@@ -64,17 +69,23 @@ class MLConfig:
 
     # Feature engineering
     lookback_periods: List[int] = field(default_factory=lambda: [5, 10, 20, 50, 100])
-    target_horizon: int = 3  # candles ahead for label
-    # LightGBM
+    target_horizon: int = 6  # candles ahead for label
+    label_threshold: float = 0.01  # for threshold-filtered training
+    # Feature selection
+    top_n_features: int = 30
+    # LightGBM — stronger regularisation to prevent overfitting
     lgbm_params: dict = field(default_factory=lambda: {
         "objective": "binary",
         "metric": "auc",
         "boosting_type": "gbdt",
-        "num_leaves": 63,
-        "learning_rate": 0.05,
-        "feature_fraction": 0.7,
-        "bagging_fraction": 0.7,
+        "num_leaves": 31,
+        "learning_rate": 0.03,
+        "feature_fraction": 0.6,
+        "bagging_fraction": 0.6,
         "bagging_freq": 5,
+        "min_child_samples": 50,
+        "lambda_l1": 0.1,
+        "lambda_l2": 1.0,
         "verbose": -1,
         "n_estimators": 500,
         "early_stopping_rounds": 50,
@@ -84,14 +95,14 @@ class MLConfig:
     transformer_nhead: int = 4
     transformer_num_layers: int = 2
     transformer_dropout: float = 0.1
-    transformer_seq_len: int = 48  # input sequence length
+    transformer_seq_len: int = 48
     transformer_epochs: int = 30
     transformer_lr: float = 1e-3
     transformer_batch_size: int = 64
     # Walk-forward
     wf_train_size: int = 5000
-    wf_test_size: int = 500
-    wf_step: int = 500
+    wf_test_size: int = 1000
+    wf_step: int = 1000
     # Cross-validation
     n_purged_cv_splits: int = 5
     embargo_pct: float = 0.01

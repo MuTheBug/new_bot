@@ -80,13 +80,31 @@ class RiskManager:
         stop_distance = atr * self.cfg.sl_atr_mult
         if stop_distance <= 0:
             return 0.0
-        # Size = risk_amount / (stop_distance / entry_price) / entry_price
-        size = (risk_amount / stop_distance) * leverage
+        # Size = risk_amount / stop_distance (base qty that loses risk_amount on SL)
+        size = risk_amount / stop_distance
         return size
 
     # ------------------------------------------------------------------
     # Circuit breakers
     # ------------------------------------------------------------------
+
+    def risk_scale_factor(self) -> float:
+        """Scale risk down during drawdowns (1.0 = full risk, 0.25 = min).
+
+        Linearly scales from 1.0 at soft_drawdown_pct to 0.25 at
+        max_drawdown_pct. Below soft threshold, returns 1.0.
+        """
+        if self.peak_equity <= 0:
+            return 1.0
+        dd_pct = (1 - self.current_equity / self.peak_equity) * 100
+        soft = self.cfg.soft_drawdown_pct
+        hard = self.cfg.max_drawdown_pct
+        if dd_pct <= soft:
+            return 1.0
+        if dd_pct >= hard:
+            return 0.25
+        # Linear interpolation: 1.0 at soft → 0.25 at hard
+        return 1.0 - 0.75 * (dd_pct - soft) / (hard - soft)
 
     def _check_drawdown(self) -> bool:
         if self.peak_equity <= 0:
@@ -157,10 +175,11 @@ class RiskManager:
     # ------------------------------------------------------------------
 
     def record_trade(self, pnl: float, timestamp: str = "") -> None:
-        """Update equity curve and loss streaks after a trade closes."""
-        self.current_equity += pnl
-        if self.current_equity > self.peak_equity:
-            self.peak_equity = self.current_equity
+        """Track loss streaks and trade history after a trade closes.
+
+        NOTE: Caller must update self.current_equity and self.peak_equity
+        before calling this method to avoid double-counting PnL.
+        """
         if pnl < 0:
             self.consecutive_losses += 1
         else:
