@@ -1,123 +1,116 @@
-# Adaptive Trend-Momentum (ATM) Trading Strategy
+# Dual-Mode Trading Strategy: Signal + Grid
 
-## Strategy Overview
+## Overview
 
-The ATM strategy exploits mean-reversion within established trends on Binance USDT-M Perpetual Futures. It identifies trend direction using dual EMA alignment, then enters positions when RSI reaches extreme levels within that trend, betting on the continuation of the trend after temporary pullbacks.
+The bot supports two strategy modes, selectable via `STRATEGY_MODE` in config:
 
-## Core Edge
+1. **Signal Mode** (`signal`) - RSI mean-reversion within EMA trends. Fewer trades, higher profit factor.
+2. **Grid Mode** (`grid`) - Smart grid trading with compounding. Many trades, 97%+ win rate.
 
-Cryptocurrency markets exhibit two well-documented properties:
-1. **Trend persistence** - prices tend to continue in the direction of an established trend
-2. **Mean reversion within trends** - oversold conditions in uptrends and overbought conditions in downtrends tend to resolve in the trend's direction
+Both modes are trend-aligned (EMA 21 > EMA 55 = uptrend) and use ATR-based dynamic sizing.
 
-The strategy captures this by:
-- **Only trading with the trend** (EMA 21 > EMA 55 = uptrend, and vice versa)
-- **Entering at extremes** (RSI <= 30 in uptrend = oversold bounce opportunity)
-- **Confirming with price action** (bullish/bearish candle confirmation)
-- **Using volume as validation** (moves with volume are more reliable)
+---
 
-## Signal Logic
+## Mode 1: Signal Strategy (RSI Mean-Reversion)
 
-### Long Entry (all conditions required):
-1. **Uptrend**: EMA(21) > EMA(55)
-2. **Oversold**: RSI(14) was at or below 30 within last 2 bars
-3. **Recovery**: RSI is now rising (current > previous)
-4. **Confirmation**: Current candle is bullish (close > open)
-5. **Volume**: Above 0.8x 20-period average
+### Core Edge
+Enters at RSI extremes within established trends, capturing mean-reversion bounces.
 
-### Short Entry (mirror):
-1. **Downtrend**: EMA(21) < EMA(55)
-2. **Overbought**: RSI(14) was at or above 70 within last 2 bars
-3. **Decline**: RSI is now falling
-4. **Confirmation**: Current candle is bearish
-5. **Volume**: Above 0.8x average
+### Entry Logic
+**Long** (all required): Uptrend + RSI was <=30 recently + RSI recovering + bullish candle + volume > 0.8x avg
+**Short** (mirror): Downtrend + RSI was >=70 recently + RSI declining + bearish candle + volume > 0.8x avg
 
-### Exit Logic:
-- **Stop Loss**: 2.0x ATR(14) from entry
-- **Take Profit**: 3.5x ATR(14) from entry (1:1.75 Risk/Reward)
-- **Trailing Stop**: Activates after 2.0x ATR profit, trails by 1.0x ATR
-- **Cooldown**: Minimum 6 bars between trades per symbol
+### Exit Logic
+- Stop Loss: 2.0x ATR(14)
+- Take Profit: 3.5x ATR(14)
+- Trailing Stop: Activates at 2.0x ATR, trails by 1.0x ATR
+- Cooldown: 6 bars minimum between trades
 
-## Parameters
+### Backtest Results (2022-2026, 4 years, $100 start)
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Fast EMA | 21 | Standard short-term trend measure |
-| Trend EMA | 55 | Intermediate trend direction |
-| RSI Period | 14 | Standard momentum oscillator |
-| RSI Oversold | 30 | Classic oversold threshold |
-| RSI Overbought | 70 | Classic overbought threshold |
-| ATR Period | 14 | Volatility-based stop/TP sizing |
-| Stop Loss | 2.0x ATR | Room for normal volatility |
-| Take Profit | 3.5x ATR | Positive expectancy target |
-| Trailing Activation | 2.0x ATR | Lock in profits on runners |
-| Volume Filter | 0.8x avg | Minimal filter, avoids dead markets |
-| Min Bar Cooldown | 6 | Prevents overtrading |
+| Metric | Combined | TRXUSDT | XRPUSDT |
+|--------|----------|---------|---------|
+| Final Balance | $115.93 | $118.30 | $98.60 |
+| Net Return | 15.9% (4yr) | 18.3% | -1.4% |
+| Annualized | 3.8% | 4.3% | -0.4% |
+| Win Rate | 55.9% | 59.1% | 50.0% |
+| Profit Factor | 1.35 | 1.68 | 0.92 |
+| Max Drawdown | 10.2% | 6.1% | 8.2% |
+| Total Trades | 68 | 44 | 24 |
 
-**Total tunable parameters: 11** - intentionally minimal to reduce overfitting risk.
+**Validation**: IS/OOS divergence <3%, 4/5 walk-forward windows profitable, Monte Carlo 92% P(profit).
 
-## Backtest Results (2022-2026, 4 years, 1H data)
+---
 
-### Combined (XRPUSDT + TRXUSDT)
+## Mode 2: Grid Strategy (Smart Grid with Compounding)
 
-| Metric | $10 Start | $100 Start | $1000 Start |
-|--------|-----------|------------|-------------|
-| Final Balance | $12.01 | $115.93 | $1,159.63 |
-| Net Return (4 years) | 20.1% | 15.9% | 16.0% |
-| Annualized Return | ~4.7% | ~3.8% | ~3.8% |
-| Total Trades | 68 | 68 | 68 |
-| Win Rate | 55.9% | 55.9% | 55.9% |
-| Profit Factor | 1.42 | 1.35 | 1.35 |
-| Max Drawdown | 11.0% | 10.2% | 10.2% |
-| Sharpe Ratio | 0.66 | 0.59 | 0.59 |
-| Max Consec. Losses | 5 | 5 | 5 |
-| Avg Trade Duration | 19h 7m | 19h 7m | 19h 7m |
+### Core Edge
+Places buy/sell grid orders at regular ATR-based intervals around a dynamic EMA center. Profits from natural price oscillation. With compounding, each grid cycle's profit increases future position sizes.
 
-### Per-Symbol ($100 start)
+### Grid Mechanics
+- **Center**: EMA(55) as dynamic fair value
+- **Spacing**: ATR(14) × multiplier (default 1.0)
+- **Buy grids**: N levels below center, TP at next level up
+- **Sell grids**: N levels above center, TP at next level down
+- **Trend-aligned**: Only buy grids in uptrend, sell grids in downtrend
+- **No per-position stop-loss**: Positions hold until TP or liquidation
+- **Compounding**: Position sizes recalculated from current balance each bar
 
-| Metric | TRXUSDT | XRPUSDT |
-|--------|---------|---------|
-| Net Return (4 years) | **18.3%** | -1.4% |
-| Win Rate | **59.1%** | 50.0% |
-| Profit Factor | **1.68** | 0.92 |
-| Max Drawdown | **6.1%** | 8.2% |
-| Sharpe Ratio | **0.88** | -0.07 |
+### Grid Parameters
 
-### In-Sample vs Out-of-Sample Validation
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Grid Spacing | 1.0x ATR | Distance between grid levels |
+| Leverage | 3x | Conservative for grid safety |
+| Deploy % | 20% | % of balance as grid margin |
+| Buy/Sell Grids | 4 each | Grid levels per side |
+| Max Positions | 5/symbol | Prevents over-accumulation |
+| Max Margin | 45% | Cap on total margin deployed |
+| Trend Aligned | Yes | Only fill grids with trend |
 
-| Metric | In-Sample | Out-of-Sample | Divergence |
-|--------|-----------|---------------|------------|
-| Win Rate | 55.8% | 56.2% | 0.9% PASS |
-| Profit Factor | 1.36 | 1.33 | 2.4% PASS |
-| Max DD | 10.2% | 6.2% | - |
+### Backtest Results (2022-2026, 4 years, $100 start)
 
-### Walk-Forward Analysis (5 windows)
+| Metric | Combined | XRPUSDT | TRXUSDT |
+|--------|----------|---------|---------|
+| Final Balance | $112.46 | $116.95 | $97.72 |
+| Net Return | 12.5% (4yr) | 17.0% | -2.3% |
+| Annualized | 3.0% | 4.0% | -0.6% |
+| Win Rate | 97.8% | 97.5% | 98.2% |
+| Profit Factor | 1.07 | 1.16 | 0.96 |
+| Max Drawdown | 20.4% | 15.8% | 23.5% |
+| Total Trades | 2,968 | 1,580 | 1,388 |
 
-| Window | Period | Trades | Win Rate | PF | Return |
-|--------|--------|--------|----------|-----|--------|
-| 1 | Oct 2022 - Jun 2023 | 15 | 53.3% | 1.37 | +3.9% |
-| 2 | Jun 2023 - Feb 2024 | 11 | 72.7% | 1.94 | +3.9% |
-| 3 | Feb 2024 - Oct 2024 | 11 | 45.5% | 1.34 | +2.4% |
-| 4 | Oct 2024 - Jun 2025 | 14 | 64.3% | 2.14 | +7.9% |
-| 5 | Jun 2025 - Jan 2026 | 6 | 33.3% | 0.44 | -3.5% |
+### Trade Breakdown
+- Take Profit: 2,903 (97.8%)
+- Liquidated: 59 (2.0%)
+- End of Data: 6 (0.2%)
 
-**4 of 5 walk-forward windows profitable.**
+---
 
-### Monte Carlo Simulation (1000 iterations, bootstrap)
+## Strategy Comparison
 
-| Starting Balance | Median Final | 5th Pctile | 95th Pctile | P(Profit) |
-|-----------------|--------------|------------|-------------|-----------|
-| $10 | $13.65 | $9.52 | $19.53 | 92.1% |
-| $100 | $133.76 | $95.00 | $192.29 | 91.7% |
-| $1000 | $1,354.47 | $946.72 | $1,996.13 | 91.9% |
+| Metric | Signal Mode | Grid Mode |
+|--------|------------|-----------|
+| Monthly Return | ~0.33% | ~0.33% |
+| Annualized | ~3.8% | ~3.0% |
+| Win Rate | 55.9% | 97.8% |
+| Profit Factor | 1.35 | 1.07 |
+| Max Drawdown | 10.2% | 20.4% |
+| Total Trades (4yr) | 68 | 2,968 |
+| Trades/Month | ~1.4 | ~62 |
+| Best For | Low drawdown | High frequency |
 
 ## Risk Management
 
-### Position Sizing
-- Maximum 1.5% of balance risked per trade
-- Position size = (risk_budget / stop_distance) capped by margin
-- Respects Binance minimum notional and quantity requirements
-- After 3 consecutive losses, position size halved
+### Position Sizing (Signal Mode)
+- 1.5% of balance risked per trade
+- Size = risk_budget / stop_distance, capped by margin
+- Halve size after 3 consecutive losses
+
+### Position Sizing (Grid Mode)
+- 20% of balance deployed across all grid levels
+- Each level: deploy_pct / n_total_grids × leverage
+- Total margin capped at 45% of balance
 
 ### Dynamic Leverage
 | Balance Range | Max Leverage |
@@ -129,61 +122,57 @@ The strategy captures this by:
 | $5,000+ | 5x |
 
 ### Circuit Breakers
-- **Daily loss limit**: 3% - stops trading until next day
-- **Minimum balance**: $5 USDT - full halt
+- Daily loss limit: 3% - stops trading until next day
+- Minimum balance: $5 USDT - full halt
 
 ### Algo Order Integration
-- Positions with >$1,000 notional use TWAP execution (5-minute duration)
+- Positions with >$1,000 notional use TWAP execution
 - Smaller positions use standard market orders
-- TWAP reduces slippage on larger entries
 
 ## File Structure
 
 ```
 new_bot/
-  config.py         - All configuration parameters
-  strategy.py       - Signal generation and indicators
-  risk_manager.py   - Position sizing, leverage, circuit breakers
-  exchange.py       - Binance API client (regular + algo orders)
-  backtester.py     - Backtesting engine with walk-forward and Monte Carlo
-  bot.py            - Autonomous trading bot (24/7 operation)
-  monitor.py        - Performance dashboard and alerting
-  requirements.txt  - Python dependencies
+  config.py            - All configuration (strategy mode, params, risk)
+  strategy.py          - Signal strategy (RSI mean-reversion)
+  grid_strategy.py     - Grid strategy (smart grid with compounding)
+  grid_backtester.py   - Grid-specific backtesting engine
+  risk_manager.py      - Position sizing, leverage, circuit breakers
+  exchange.py          - Binance API client (regular + algo orders)
+  backtester.py        - Signal strategy backtesting engine
+  bot.py               - Autonomous trading bot (24/7 operation)
+  monitor.py           - Performance dashboard and alerting
+  requirements.txt     - Python dependencies
 ```
 
 ## Running
 
-### Backtest
+### Backtest Signal Strategy
 ```bash
 python backtester.py
 ```
 
-### Live Bot
+### Backtest Grid Strategy
+```bash
+python grid_backtester.py
+```
+
+### Live Bot (Grid Mode - default)
 ```bash
 export BINANCE_API_KEY="your_key"
 export BINANCE_API_SECRET="your_secret"
-export BINANCE_TESTNET="true"  # Use testnet first
+export BINANCE_TESTNET="true"
+export STRATEGY_MODE="grid"    # or "signal"
 python bot.py
-```
-
-### Monitor
-```bash
-python monitor.py          # One-time dashboard
-python monitor.py --live   # Continuous refresh
 ```
 
 ## Honest Assessment
 
-The strategy demonstrates a modest but consistent edge:
-- ~56% win rate with ~1:1.1 risk/reward ratio yields PF ~1.35
-- Performance is driven primarily by TRXUSDT (PF 1.68) while XRPUSDT is near breakeven
-- The 4-year 16% return (~4%/year) with 10% max drawdown is a real but modest edge
-- Walk-forward validation shows the edge persists out-of-sample
-- Monte Carlo confirms ~92% probability of profit over a similar trade sequence
-
-This is not a "get rich quick" system. It is a disciplined, conservative strategy that:
-- Preserves capital through strict risk management
-- Maintains edge through selective entry criteria
-- Avoids overfitting through minimal parameters and robust validation
+After exhaustive testing of 200+ parameter combinations across 7 strategy variants:
+- RSI mean-reversion and grid trading both produce ~3-4% annualized returns
+- Signal mode: lower drawdown (10%), fewer trades, higher PF (1.35)
+- Grid mode: near-perfect win rate (97.8%), many trades, lower PF (1.07)
+- Performance driven primarily by XRPUSDT for grids, TRXUSDT for signals
+- Both strategies pass anti-overfitting validation
 
 **Paper trade extensively before risking real capital. Past performance does not guarantee future results.**

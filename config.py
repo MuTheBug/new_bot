@@ -124,6 +124,28 @@ MONITOR = {
     "dashboard_port": 8080,
 }
 
+# === Strategy Mode ===
+# "signal" = RSI mean-reversion (fewer trades, higher PF)
+# "grid"   = Smart grid trading (many trades, high WR, compounding)
+STRATEGY_MODE = os.environ.get("STRATEGY_MODE", "grid")
+
+# === Grid Strategy Parameters ===
+GRID = {
+    "spacing_mult": 1.0,            # Grid spacing as ATR multiple
+    "leverage": 3,                   # Grid leverage (keep low for safety)
+    "deploy_pct": 0.20,             # % of balance deployed as grid margin
+    "n_buy_grids": 4,               # Buy grid levels below center
+    "n_sell_grids": 4,              # Sell grid levels above center
+    "max_positions_per_symbol": 5,   # Max simultaneous grid positions
+    "max_total_margin_pct": 0.45,   # Max total margin as % of balance
+    "trend_aligned": True,           # Only fill grids in trend direction
+    "trend_flip": False,             # Close counter-trend on trend change
+    "ema_period": 55,                # Center price EMA
+    "atr_period": 14,                # ATR for dynamic spacing
+    "tp_mult": 1.0,                  # TP = spacing * tp_mult
+    "min_balance": 5.0,             # Minimum balance to trade
+}
+
 # === Backtest Configuration ===
 BACKTEST = {
     "data_dir": os.path.dirname(__file__),
