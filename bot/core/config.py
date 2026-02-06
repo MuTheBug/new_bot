@@ -27,17 +27,17 @@ class TradingConfig:
     symbols: List[str] = field(default_factory=lambda: ["XRPUSDT"])
     leverage: int = 10
     margin_type: str = "ISOLATED"
-    # Position sizing — reduced risk per trade for more trades
-    risk_per_trade_pct: float = 2.0  # % of equity risked per trade
+    # Position sizing — aggressive for scalping edge compounding
+    risk_per_trade_pct: float = 3.0  # % of equity risked per trade
     max_position_pct: float = 90.0  # max % of equity in a single position
     min_notional_usd: float = 5.0  # Binance minimum notional
     # Timeframes
     primary_tf: str = "1h"
-    # Signal thresholds — asymmetric: more selective on LONGs (weaker edge)
-    long_entry_threshold: float = 0.58
+    # Signal thresholds — wider for more frequent scalping trades
+    long_entry_threshold: float = 0.56
     short_entry_threshold: float = 0.44
-    signal_exit_long: float = 0.44  # exit LONG if signal flips strongly bearish
-    signal_exit_short: float = 0.58  # exit SHORT if signal flips strongly bullish
+    signal_exit_long: float = 0.44  # exit LONG if signal flips bearish
+    signal_exit_short: float = 0.58  # exit SHORT if signal flips bullish
     # Time-based exit
     max_hold_candles: int = 18  # force exit after 3x prediction horizon
 
@@ -58,7 +58,7 @@ class RiskConfig:
     # Flash-crash protection
     flash_crash_pct: float = 15.0  # single-candle move (hourly)
     cooldown_candles: int = 2
-    # Trailing stop
+    # Trailing stop — let winners run before locking in
     trailing_activate_pct: float = 1.5
     trailing_callback_pct: float = 0.6
 
