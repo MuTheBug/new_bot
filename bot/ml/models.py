@@ -352,6 +352,12 @@ class EnsemblePredictor:
         return self
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        # Filter to the features used during training (feature selection)
+        if self._feature_names and isinstance(X, pd.DataFrame):
+            missing = [c for c in self._feature_names if c not in X.columns]
+            if missing:
+                raise ValueError(f"Missing features for prediction: {missing}")
+            X = X[self._feature_names]
         X_arr = np.nan_to_num(X.values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
         lgbm_pred = self.lgbm.predict_proba(X_arr)
 
