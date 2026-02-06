@@ -5,9 +5,14 @@ Requires:
     - BINANCE_API_KEY and BINANCE_API_SECRET environment variables
     - A trained model (run run_backtest.py first, or provide a model path)
 
+Optional:
+    - TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID for Telegram notifications
+
 Usage:
     export BINANCE_API_KEY="your_key"
     export BINANCE_API_SECRET="your_secret"
+    export TELEGRAM_BOT_TOKEN="your_bot_token"
+    export TELEGRAM_CHAT_ID="your_chat_id"
     python run_bot.py [--symbol XRPUSDT] [--leverage 10] [--train-first]
 """
 
@@ -30,6 +35,10 @@ def main():
         "--data", default="XRPUSDT_2022_2026.csv",
         help="CSV data path for --train-first mode",
     )
+    parser.add_argument(
+        "--no-telegram", action="store_true",
+        help="Disable Telegram notifications",
+    )
     args = parser.parse_args()
 
     from bot.core.config import BotConfig
@@ -46,6 +55,9 @@ def main():
     config = BotConfig()
     config.trading.symbols = [args.symbol]
     config.trading.leverage = args.leverage
+
+    if args.no_telegram:
+        config.telegram.enabled = False
 
     model = None
 

@@ -22,6 +22,7 @@ from bot.core.risk import RiskManager
 from bot.exchange.client import BinanceAPIError, BinanceFuturesClient
 from bot.ml.models import EnsemblePredictor
 from bot.utils.logger import get_logger
+from bot.utils.telegram import TelegramNotifier
 
 log = get_logger("bot")
 
@@ -39,6 +40,13 @@ class TradingBot:
         self._sizer: Optional[PositionSizer] = None
         self._current_position: Optional[dict] = None
         self._last_signal_time: float = 0
+
+        # Telegram notifications
+        tg = config.telegram
+        if tg.enabled:
+            self.notifier = TelegramNotifier(tg.bot_token, tg.chat_id)
+        else:
+            self.notifier = TelegramNotifier("", "")  # disabled stub
 
         # Graceful shutdown
         signal.signal(signal.SIGINT, self._shutdown)
@@ -203,8 +211,16 @@ class TradingBot:
                 "symbol": symbol,
             }
 
+            self.notifier.notify_position_opened(
+                side=side, symbol=symbol, qty=qty,
+                entry_price=current_price, sl_price=sl_price,
+                tp_price=tp_price, signal=signal,
+                equity=self.risk.current_equity,
+            )
+
         except BinanceAPIError as e:
             log.error("Order placement failed: %s", e)
+            self.notifier.notify_error(str(e), context="Order placement")
 
     def _close_position(self, symbol: str, reason: str = "signal") -> None:
         """Close current position and cancel outstanding orders."""
@@ -219,8 +235,13 @@ class TradingBot:
             self.client.place_market_order(symbol, close_side, pos["qty"])
             log.info("Position closed (%s): %s %.4f %s",
                      reason, pos["side"], pos["qty"], symbol)
+            self.notifier.notify_position_closed(
+                side=pos["side"], symbol=symbol, reason=reason,
+                equity=self.risk.current_equity,
+            )
         except BinanceAPIError as e:
             log.error("Close position failed: %s", e)
+            self.notifier.notify_error(str(e), context="Close position")
 
         self._current_position = None
 
@@ -258,16 +279,40 @@ class TradingBot:
         symbol = self.cfg.trading.symbols[0]
         log.info("Starting autonomous trading loop for %s", symbol)
 
+        self.notifier.notify_startup(
+            symbol=symbol,
+            leverage=self.cfg.trading.leverage,
+            equity=self.risk.current_equity,
+        )
+
         cycle = 0
         last_daily_reset = 0
 
         while self._running:
             cycle += 1
             try:
-                # Daily risk reset
+                # Daily risk reset and summary
                 now = time.time()
                 current_day = int(now // 86400)
                 if current_day != last_daily_reset:
+                    if last_daily_reset != 0:
+                        # Send daily summary for the completed day
+                        daily_pnl = (
+                            self.risk.current_equity
+                            - self.risk.daily_start_equity
+                        )
+                        daily_trades = len([
+                            t for t in self.risk.trade_history
+                            if t.timestamp and t.timestamp[:10] == time.strftime(
+                                "%Y-%m-%d", time.gmtime(now - 86400)
+                            )
+                        ])
+                        self.notifier.notify_daily_summary(
+                            equity=self.risk.current_equity,
+                            daily_pnl=daily_pnl,
+                            trades_today=daily_trades,
+                            drawdown_pct=self.risk.drawdown_pct(),
+                        )
                     self.risk.reset_daily()
                     last_daily_reset = current_day
 
@@ -331,15 +376,23 @@ class TradingBot:
                             log.debug("Trailing stop update candidate: %.4f", ts)
 
                 # --- Entry logic ---
-                if self._current_position is None and self.risk.can_trade():
-                    if signal >= self.cfg.trading.long_entry_threshold:
-                        self._open_position(
-                            symbol, "LONG", signal, current_price, current_atr
-                        )
-                    elif signal <= self.cfg.trading.short_entry_threshold:
-                        self._open_position(
-                            symbol, "SHORT", signal, current_price, current_atr
-                        )
+                if self._current_position is None:
+                    if not self.risk.can_trade():
+                        if self.risk._killed and not getattr(self, '_kill_notified', False):
+                            self.notifier.notify_kill_switch(
+                                drawdown_pct=self.risk.drawdown_pct(),
+                                equity=self.risk.current_equity,
+                            )
+                            self._kill_notified = True
+                    else:
+                        if signal >= self.cfg.trading.long_entry_threshold:
+                            self._open_position(
+                                symbol, "LONG", signal, current_price, current_atr
+                            )
+                        elif signal <= self.cfg.trading.short_entry_threshold:
+                            self._open_position(
+                                symbol, "SHORT", signal, current_price, current_atr
+                            )
 
                 # Wait for next candle (1h intervals, check every 60s)
                 time.sleep(60)
@@ -348,8 +401,16 @@ class TradingBot:
                 break
             except Exception as e:
                 log.error("Error in main loop: %s\n%s", e, traceback.format_exc())
+                self.notifier.notify_error(
+                    str(e), context=f"Main loop cycle {cycle}"
+                )
                 time.sleep(30)
 
         # Cleanup
+        summary = self.risk.summary()
         log.info("Bot stopped. Final equity: $%.2f", self.risk.current_equity)
-        log.info("Summary: %s", self.risk.summary())
+        log.info("Summary: %s", summary)
+        self.notifier.notify_shutdown(
+            equity=self.risk.current_equity,
+            total_trades=summary.get("trades", 0),
+        )

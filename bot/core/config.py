@@ -120,6 +120,15 @@ class BacktestConfig:
 
 
 @dataclass
+class TelegramConfig:
+    """Telegram notification settings."""
+
+    bot_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    chat_id: str = field(default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID", ""))
+    enabled: bool = True  # set False to disable even if token/chat_id are set
+
+
+@dataclass
 class BotConfig:
     """Root configuration aggregating all sub-configs."""
 
@@ -128,5 +137,6 @@ class BotConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     ml: MLConfig = field(default_factory=MLConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
     log_level: str = "INFO"
     data_dir: str = "data"
