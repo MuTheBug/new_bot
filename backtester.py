@@ -373,6 +373,20 @@ class Backtester:
         else:
             avg_duration = None
 
+        # Test duration and annualized return
+        if len(eq) > 1:
+            first_ts = eq["timestamp"].iloc[0]
+            last_ts = eq["timestamp"].iloc[-1]
+            duration = last_ts - first_ts
+            years = duration.total_seconds() / (365.25 * 86400)
+            if years > 0 and self.balance > 0 and self.initial_balance > 0:
+                annualized_return = (self.balance / self.initial_balance) ** (1 / years) - 1
+            else:
+                annualized_return = 0
+        else:
+            years = 0
+            annualized_return = 0
+
         # Per-side analysis
         longs = df_trades[df_trades["side"] == "LONG"]
         shorts = df_trades[df_trades["side"] == "SHORT"]
@@ -382,6 +396,8 @@ class Backtester:
             "final_balance": self.balance,
             "net_pnl": net_pnl,
             "net_return": net_return,
+            "test_duration_years": round(years, 1),
+            "annualized_return": annualized_return,
             "total_trades": total_trades,
             "winners": len(winners),
             "losers": len(losers),
@@ -649,7 +665,10 @@ def _print_results(results, indent=2):
 
     print(f"{pad}Final Balance: ${results['final_balance']:.2f} "
           f"(from ${results['initial_balance']:.2f})")
-    print(f"{pad}Net Return: {results['net_return']:.1%}")
+    years = results.get('test_duration_years', 0)
+    ann = results.get('annualized_return', 0)
+    print(f"{pad}Net Return: {results['net_return']:.1%} over {years} years "
+          f"({ann:.1%} annualized)")
     print(f"{pad}Total Trades: {results['total_trades']} "
           f"(L:{results['long_trades']}, S:{results['short_trades']})")
     print(f"{pad}Win Rate: {results['win_rate']:.1%} "

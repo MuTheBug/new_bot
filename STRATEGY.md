@@ -63,7 +63,8 @@ The strategy captures this by:
 | Metric | $10 Start | $100 Start | $1000 Start |
 |--------|-----------|------------|-------------|
 | Final Balance | $12.01 | $115.93 | $1,159.63 |
-| Net Return | 20.1% | 15.9% | 16.0% |
+| Net Return (4 years) | 20.1% | 15.9% | 16.0% |
+| Annualized Return | ~4.7% | ~3.8% | ~3.8% |
 | Total Trades | 68 | 68 | 68 |
 | Win Rate | 55.9% | 55.9% | 55.9% |
 | Profit Factor | 1.42 | 1.35 | 1.35 |
@@ -76,7 +77,7 @@ The strategy captures this by:
 
 | Metric | TRXUSDT | XRPUSDT |
 |--------|---------|---------|
-| Net Return | **18.3%** | -1.4% |
+| Net Return (4 years) | **18.3%** | -1.4% |
 | Win Rate | **59.1%** | 50.0% |
 | Profit Factor | **1.68** | 0.92 |
 | Max Drawdown | **6.1%** | 8.2% |
